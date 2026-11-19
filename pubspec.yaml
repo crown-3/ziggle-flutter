@@ -1,7 +1,7 @@
 name: ziggle
 description: ziggle
 publish_to: "none"
-version: 4.5.0
+version: 4.5.1
 
 environment:
   sdk: ^3.14.0
@@ -64,7 +64,6 @@ dependencies:
   hive_ce: ^2.16.0
   hive_ce_flutter: ^2.3.2
   bloc_concurrency: ^0.3.0
-
 
 dev_dependencies:
   flutter_test:
