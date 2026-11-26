@@ -89,15 +89,22 @@ echo "E2E run $run_id"
 # EXPERIMENT (#734): sample host CPU while the flows run.
 (
   sysctl -n hw.ncpu hw.memsize
+  echo "== resident before flows (RSS KB)"
+  ps -axo rss=,comm= | sort -rn | head -40
+  # One process that loops in place, so a slow exec does not stall sampling.
+  # vm_stat 10 prints one line per 10 s (pageins, pageouts, swapins, swapouts).
+  vm_stat 10 | while read -r line; do
+    echo "$(date -u +%H:%M:%S) $line"
+  done &
   while true; do
-    date -u +%H:%M:%S
-    top -l 2 -s 1 -o cpu -n 12 -stats pid,command,cpu,mem | awk '/^PID/{n++} n==2'
-    vm_stat | head -6
-    sleep 8
+    echo "== $(date -u +%H:%M:%S)"
+    sysctl vm.swapusage
+    top -l 1 -o mem -n 15 -stats pid,command,mem,cpu | awk '/^PID/{p=1} p'
+    sleep 20
   done
 ) > "$output_dir/host-cpu.txt" 2>&1 &
 sampler=$!
-trap 'st=$?; kill $sampler 2>/dev/null; (exit $st); finish' EXIT
+trap 'st=$?; kill $sampler 2>/dev/null; pkill -f "vm_stat 10"; (exit $st); finish' EXIT
 dart run scripts/e2e/fixtures.dart setup --run-id "$run_id" --out "$fixtures_env"
 set -a
 # shellcheck disable=SC1090
