@@ -101,8 +101,8 @@ echo "E2E run $run_id"
   while true; do
     echo "== $(date -u +%H:%M:%S)"
     sysctl vm.swapusage
-    top -l 1 -o mem -n 15 -stats pid,command,mem,cpu | awk '/^PID/{p=1} p'
-    sleep 20
+    scripts/e2e/exp_mem.sh
+    sleep 45
   done
 ) > "$output_dir/host-cpu.txt" 2>&1 &
 sampler=$!
