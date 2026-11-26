@@ -1,0 +1,104 @@
+name: EXP 734 probe
+
+# EXPERIMENT (#734): compare macOS runners on the slow iOS simulator paths.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: probe ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    env:
+      OUT: build/probe
+    steps:
+      - uses: actions/checkout@v4
+      - id: flutter-version
+        run: echo "version=$(jq -r .flutter .fvmrc)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+      - name: Create dotenv
+        run: |
+          cat > .env <<'DOTENV'
+          IDP_REDIRECT_SCHEME=ziggle-idp-login-redirect
+          IDP_REDIRECT_URI=$IDP_REDIRECT_SCHEME://callback
+          IDP_BASE_URL=https://account.gistory.me
+          IDP_API_BASE_URL=https://api.account.gistory.me/
+          ZIGGLE_IDP_CLIENT_ID=b0c3a25f-1291-410c-bac3-192094d47c77
+          GROUPS_IDP_CLIENT_ID=a0ede63e-a086-40cb-ac02-cdd9fe17d821
+          ZIGGLE_IDP_BASE_PATH=/authorize?client_id=$ZIGGLE_IDP_CLIENT_ID&redirect_uri=$IDP_REDIRECT_URI&scope=profile%20email%20student_id%20offline_access&response_type=code
+          GROUPS_IDP_BASE_PATH=/authorize?client_id=$GROUPS_IDP_CLIENT_ID&redirect_uri=$IDP_REDIRECT_URI&scope=profile%20email%20student_id%20offline_access&response_type=code
+          ZIGGLE_IDP_PATH=$ZIGGLE_IDP_BASE_PATH&prompt=consent
+          ZIGGLE_IDP_RE_LOGIN_PATH=$ZIGGLE_IDP_BASE_PATH&prompt=login
+          GROUPS_IDP_PATH=$GROUPS_IDP_BASE_PATH&prompt=consent
+          GROUPS_IDP_RELOGIN_PATH=$GROUPS_IDP_BASE_PATH&prompt=login
+          PRIVACY_POLICY_URL=https://example.com
+          TERMS_OF_SERVICE_URL=https://example.com
+          WITHDRAWAL_URL=https://account.gistory.me
+          HEY_DEVELOPER_URL=https://example.com
+          CHATBOT_WIDGET_KEY=dummy
+          DOTENV
+          sed -i '' 's/^ *//' .env
+      - name: Generate files
+        run: |
+          flutter pub get
+          dart run slang
+          dart run build_runner build
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | MAESTRO_VERSION=2.12.1 bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Build app
+        run: scripts/e2e/app.sh build ios
+      - name: Boot simulator
+        id: simulator
+        run: |
+          sysctl -n hw.ncpu hw.memsize machdep.cpu.brand_string
+          xcrun simctl list runtimes
+          udid=$(xcrun simctl list devices available --json | jq -r '
+            .devices | to_entries
+            | map(select(.key | test("iOS-[0-9]+(-[0-9]+)*$")))
+            | sort_by(.key | capture("iOS-(?<v>[0-9]+(-[0-9]+)*)").v | split("-") | map(tonumber))
+            | last.value | map(select(.name | startswith("iPhone"))) | last.udid')
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          date -u +%T
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" | tail -3
+          date -u +%T
+          xcrun simctl list devices | grep "$udid"
+      - name: Probe
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+          MAESTRO_CLI_NO_ANALYTICS: "1"
+          MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: "true"
+        run: |
+          mkdir -p "$OUT"
+          xcrun simctl install "$UDID" build/ios/iphonesimulator/Runner.app
+          (
+            set +e +o pipefail
+            vm_stat 10 | while read -r line; do echo "$(date -u +%H:%M:%S) $line"; done &
+            while true; do echo "== $(date -u +%H:%M:%S)"; sysctl vm.swapusage; scripts/e2e/exp_mem.sh; sleep 45; done
+          ) > "$OUT/host-mem.txt" 2>&1 &
+          for i in 1 2; do
+            maestro test --device "$UDID" --format junit --output "$OUT/junit-$i.xml" \
+              --debug-output "$OUT/debug-$i" --flatten-debug-output \
+              .maestro/probe/login_page.yaml || echo "probe $i failed"
+          done
+          for f in "$OUT"/junit-*.xml; do grep -o '<testcase [^>]*' "$f"; done
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: probe-${{ matrix.runner }}
+          path: build/probe
+          retention-days: 7

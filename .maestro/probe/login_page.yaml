@@ -1,0 +1,31 @@
+# EXPERIMENT (#734): from a fresh launch, open the IdP page without signing in.
+# Exercises the Maestro driver start, SafariViewService and the WebKit
+# processes, which were slow on the CI simulator.
+appId: me.gistory.ziggle
+name: probe login page
+---
+- runFlow: ../shared/launch.yaml
+- repeat:
+    times: 60
+    while:
+      notVisible:
+        id: login.button
+    commands:
+      - runFlow:
+          when:
+            visible: "Allow|허용"
+          commands:
+            - tapOn: "Allow|허용"
+      - waitForAnimationToEnd:
+          timeout: 1500
+- tapOn:
+    id: login.button
+- extendedWaitUntil:
+    visible: "Continue|계속"
+    timeout: 300000
+- takeScreenshot: probe_alert
+- tapOn: "Continue|계속"
+- extendedWaitUntil:
+    visible: "m@gm.gist.ac.kr|Continue|계속하기"
+    timeout: 300000
+- takeScreenshot: probe_idp
