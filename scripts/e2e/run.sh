@@ -86,6 +86,18 @@ finish() {
 trap finish EXIT
 
 echo "E2E run $run_id"
+# EXPERIMENT (#734): sample host CPU while the flows run.
+(
+  sysctl -n hw.ncpu hw.memsize
+  while true; do
+    date -u +%H:%M:%S
+    top -l 2 -s 1 -o cpu -n 12 -stats pid,command,cpu,mem | awk '/^PID/{n++} n==2'
+    vm_stat | head -6
+    sleep 8
+  done
+) > "$output_dir/host-cpu.txt" 2>&1 &
+sampler=$!
+trap 'st=$?; kill $sampler 2>/dev/null; (exit $st); finish' EXIT
 dart run scripts/e2e/fixtures.dart setup --run-id "$run_id" --out "$fixtures_env"
 set -a
 # shellcheck disable=SC1090
