@@ -88,7 +88,9 @@ trap finish EXIT
 echo "E2E run $run_id"
 # EXPERIMENT (#734): sample host CPU while the flows run.
 (
-  sysctl -n hw.ncpu hw.memsize
+  set +e +o pipefail
+  sysctl -n hw.ncpu hw.memsize vm.swapusage
+  memory_pressure | tail -3
   echo "== resident before flows (RSS KB)"
   ps -axo rss=,comm= | sort -rn | head -40
   # One process that loops in place, so a slow exec does not stall sampling.
