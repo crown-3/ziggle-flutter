@@ -2,7 +2,9 @@ name: EXP 734 probe
 
 # EXPERIMENT (#734): compare macOS runners on the slow iOS simulator paths.
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - exp/734-probe
 
 jobs:
   probe:
