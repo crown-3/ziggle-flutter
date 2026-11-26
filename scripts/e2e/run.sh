@@ -86,23 +86,6 @@ finish() {
 trap finish EXIT
 
 echo "E2E run $run_id"
-# EXPERIMENT (#734): let the first boot settle, then boot the simulator again.
-udid=""
-for ((i = 0; i < ${#maestro_args[@]}; i++)); do
-  [[ "${maestro_args[i]}" == --device ]] && udid="${maestro_args[i + 1]}"
-done
-if [[ -n "$udid" ]]; then
-  echo "exp: settle $(date -u +%T)"
-  sleep 120
-  scripts/e2e/exp_mem.sh | head -3
-  echo "exp: shutdown $(date -u +%T)"
-  xcrun simctl shutdown "$udid"
-  echo "exp: boot $(date -u +%T)"
-  xcrun simctl boot "$udid"
-  xcrun simctl bootstatus "$udid" | tail -2
-  echo "exp: booted $(date -u +%T)"
-  scripts/e2e/exp_mem.sh | head -3
-fi
 # EXPERIMENT (#734): sample host CPU while the flows run.
 (
   set +e +o pipefail
